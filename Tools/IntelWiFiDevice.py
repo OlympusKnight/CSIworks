@@ -24,7 +24,7 @@ class Intel_IWL5300_API():
         self._f5 = 5.825e9
         self._fs = 312.5e3
         self._d = 0.03
-        self._windowLen = 1000
+        self._windowLen = 500
 
     @staticmethod
     def to_db(aValue):
@@ -104,6 +104,7 @@ class Intel_IWL5300_API():
 
             while True:
                 # field_len = int(tClient.recv(bufferSize).encode('hex'), 16)
+                # print count
                 try:
                     tClient.settimeout(15)
                     size = struct.unpack('>H', tClient.recv(2))[0]
@@ -142,15 +143,39 @@ class Intel_IWL5300_API():
                                 broken_perm = 1
                                 print("WARN ONCE: Found CSI with NRX=", nrx, " and invalid perm=", perm)
                         else:
-                            csiMatrix = np.matrix(np.zeros((30 * ntx, nrx), dtype='complex64'))
-                            csi = np.matrix(csi).reshape(30, 3)
+                            # csiMatrix = np.matrix(np.zeros((nrx, 30 * ntx), dtype='complex64'))
+                            # csi = np.matrix(csi).reshape(3, 30)
+                            # for n in range(nrx):
+                            #     csiMatrix[perm[n] - 1, :] = csi[n, :]
+                            colByTransmitter = lambda t, csi: [tuple(csi[0:t])] + colByTransmitter(t, csi[t:]) if len(
+                                csi) != 0 else []
+                            csi = colByTransmitter(ntx, csi)
+
+                            srcList = lambda r, t, csi, cnt: [csi[cnt::r]] + srcList(r, t, csi,
+                                                                                     cnt + 1) if r != cnt else []
+                            csi = srcList(nrx, ntx, csi, 0)
+
+                            deTuple = lambda t: list(map(deTuple, t)) if isinstance(t, (list, tuple)) else t
+                            csi = deTuple(csi)
+
+                            csiMatrix = np.zeros((30 * ntx, nrx), complex)
+
+                            for n in range(len(csi)):
+                                csi[n] = list(func.reduce(lambda x, y: x + y, csi[n]))
+
                             for n in range(nrx):
-                                csiMatrix[:, perm[n] - 1] = csi[:, n]
-                            # print csi
+                                csiMatrix[:, perm[n] - 1] = csi[n]
+
+                            csiMatrix = np.matrix(csiMatrix)
+
+                            # specItem.plot(np.angle(csiMatrix[:,0]), clear=True)
+                            # app.processEvents()
+                            # if not mainWindow.isActiveWindow():
+                            #     break
                             self.csi_facto_aoa(csiMatrix, degList, self._windowLen)
                             if len(degList) == self._windowLen:
                                 # curve.setData(np.array(degList)[0])
-                                k = kde.KernelDensity(kernel='gaussian', bandwidth=1).fit(degList)
+                                k = kde.KernelDensity(kernel='gaussian', bandwidth=2).fit(degList)
                                 log_dens = k.score_samples(X_plot)
                                 specItem.plot(X_plot[:, 0], np.exp(log_dens), clear=True)
                                 app.processEvents()
@@ -203,17 +228,17 @@ class Intel_IWL5300_API():
     def csi_facto_aoa(self, csiMatrix, degList, windowLen):
         if len(degList) == windowLen:
             del degList[:(windowLen/10)]
-        csi = csiMatrix.T[:, 29]
+        csi = csiMatrix.T
         removedcsi = np.matrix(self.__csi_remove_multipath(csi))  #remove multipath
         # smoothed_csi = np.matrix(self.__smooth_csi(self.__csi_extend_57(removedcsi)))
-        deg = [self.__csi_find_aoa(removedcsi)]
+        deg = [self.__csi_find_aoa(csi)]
         degList.append(deg)
 
     def __csi_find_aoa(self, csi):
         MUSIC_S = csi * csi.H
         value, vector = np.linalg.eigh(MUSIC_S)
         # noiseVectorIdx = [i for i in range(0, len(value)) if value[i] < np.max(value) * 1e-4]
-        noiseVectorIdx = [0, 1]
+        noiseVectorIdx = [0]
         En = np.matrix(vector[:, noiseVectorIdx])
         degrees = np.arange(-90, 91, 1)  # the resolution of degree
         tmp = np.matrix([0, 1, 2]).T  # only use 3 antennas
@@ -229,8 +254,11 @@ class Intel_IWL5300_API():
     def __csi_remove_multipath(csi):
         cir = ifft(csi)
         n=15
-        numZeros = np.zeros([3, (30-n)], dtype='complex64')
-        removedCSI = fft(np.hstack([cir[:, 0:n], numZeros]))
+        # numZeros1 = np.zeros([3, n-1], dtype='complex64')
+        # numZeros2 = np.zeros([3, (30-n)], dtype='complex64')
+        # removedCSI = fft(np.hstack([numZeros1, cir[:, (n-1):n], numZeros2]))
+        numZeros2 = np.zeros([3, (30 - n)], dtype='complex64')
+        removedCSI = fft(np.hstack([cir[:, 0:n], numZeros2]))
         return removedCSI
 
     def __parse_symbol_file(self, aFilePath):
