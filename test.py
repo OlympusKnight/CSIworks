@@ -9,7 +9,7 @@ from Functions.WiFiArrMUSICAnalysis import *
 from matplotlib import cm
 import matplotlib.pyplot as plt
 from sklearn.neighbors import kde
-from pyqtgraph.Qt import QtGui, QtCore
+from pyqtgraph.Qt import QtWidgets, QtCore
 import pyqtgraph as pg
 
 
@@ -22,7 +22,7 @@ csi_trace.live_stream(8090)
 """ 
 read from a existed binary file
 """
-# csi_trace.open('data/20m-45-2.dat')
+# csi_trace.open('data/20m-25-1.dat')
 # MUSIC = WiFi_MUSIC_API(csi_trace)
 #
 # degList = MUSIC.csi_facto_aoa()
@@ -54,5 +54,9 @@ read from a existed binary file
 
 # if __name__ == '__main__':
 #     import sys
+#
+#     csi_trace = IntelDeviceService(Intel_IWL5300_API())
+#     csi_trace.live_stream(8090)
+#
 #     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
-#         QtGui.QApplication.instance().exec_()
+#         QtWidgets.QApplication.instance().exec_()

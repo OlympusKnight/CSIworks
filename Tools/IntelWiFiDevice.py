@@ -3,7 +3,7 @@ from Tools.ExtractorService import *
 import copy
 import cmath
 import struct
-import os, time
+import time
 from io import StringIO
 from socket import *
 from scipy.fftpack import fft, ifft
@@ -11,6 +11,8 @@ from math import pi
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets
 from sklearn.neighbors import kde
+from Functions.fastDTW import fastDTW
+import matplotlib.pyplot as plt
 
 
 class Intel_IWL5300_API():
@@ -24,7 +26,7 @@ class Intel_IWL5300_API():
         self._f5 = 5.825e9
         self._fs = 312.5e3
         self._d = 0.03
-        self._windowLen = 500
+        self._windowLen = 100
 
     @staticmethod
     def to_db(aValue):
@@ -95,7 +97,8 @@ class Intel_IWL5300_API():
             triangle = [1, 3, 6]
             count = 0
 
-            degList = []
+            degList1 = []
+            degList2 = [[1]]
             X_plot = np.arange(-90, 91, 1)[:, np.newaxis]
 
             print 'Waiting for connection...'
@@ -110,25 +113,24 @@ class Intel_IWL5300_API():
                     size = struct.unpack('>H', tClient.recv(2))[0]
                 except timeout:
                     print 'Timeout, please restart the client and connect again.'
-                    tClient.close()
-                    break
-                    # tClient, addr = t.accept()
-                    # print 'Connected from :', addr
-                    # continue
+                    tClient, addr = t.accept()
+                    print 'Connected from :', addr
+                    continue
                 code = struct.unpack('B', tClient.recv(1))[0]
 
                 if code == 187:
                     bytes = tClient.recv(size-1)
 
                     if len(bytes) != (size - 1):
-                        tClient.close()
-                        return False
+                        print len(bytes)
+                        break
+                        # tClient.close()
+                        # return False
                 elif size <= bufferSize:
                     tClient.recv(size - 1)
                     continue
                 else:
                     continue
-
                 if code == 187:
                     count = count + 1
 
@@ -166,21 +168,37 @@ class Intel_IWL5300_API():
                             for n in range(nrx):
                                 csiMatrix[:, perm[n] - 1] = csi[n]
 
-                            csiMatrix = np.matrix(csiMatrix)
+                            csi_matrix = np.matrix(csiMatrix)
+                            self.csi_facto_aoa(csi_matrix, degList1, self._windowLen)
 
-                            # specItem.plot(np.angle(csiMatrix[:,0]), clear=True)
+                            """this is the plot of ifft of csi to get the cir of a packet"""
+                            # cir = ifft(csi_matrix.T, 128)
+                            # print np.abs(cir)
+                            # specItem.plot(np.abs(cir)[0, :], clear=True)
                             # app.processEvents()
                             # if not mainWindow.isActiveWindow():
                             #     break
-                            self.csi_facto_aoa(csiMatrix, degList, self._windowLen)
-                            if len(degList) == self._windowLen:
-                                # curve.setData(np.array(degList)[0])
-                                k = kde.KernelDensity(kernel='gaussian', bandwidth=2).fit(degList)
-                                log_dens = k.score_samples(X_plot)
-                                specItem.plot(X_plot[:, 0], np.exp(log_dens), clear=True)
-                                app.processEvents()
-                                if not mainWindow.isActiveWindow():
-                                    break
+                            """this is the plot of raw csi phase"""
+                            # specItem.plot(np.angle(csiMatrix[:, 0]))
+                            # specItem.plot(np.angle(csiMatrix[:, 1]))
+                            # specItem.clearPlots()
+                            # app.processEvents()
+                            # if not mainWindow.isActiveWindow():
+                            #     break
+                            """this is the plot of kde of the aoa of the past 100 packet"""
+                            k = kde.KernelDensity(kernel='gaussian', bandwidth=2).fit(degList1)
+                            log_dens = k.score_samples(X_plot)
+                            specItem.plot(X_plot[:, 0], np.exp(log_dens), clear=True)
+                            app.processEvents()
+                            if not mainWindow.isActiveWindow():
+                                break
+                            """foreground dtw print"""
+                            # if len(degList1) == self._windowLen:
+                            #     dtw = fastDTW(degList1, degList2)
+                            #     val, path = dtw.dtw()
+                            #     print val
+                            #     degList2 = copy.copy(degList1)
+
             tClient.close()
             t.close()
             break
@@ -225,10 +243,10 @@ class Intel_IWL5300_API():
             smoothed_csi[i, :] = np.concatenate((e_csi[1, (i - 15):(i + 28)], e_csi[2, (i - 15):(i + 28)]), axis=0)
         return smoothed_csi
 
-    def csi_facto_aoa(self, csiMatrix, degList, windowLen):
+    def csi_facto_aoa(self, csi_matrix, degList, windowLen):
         if len(degList) == windowLen:
-            del degList[:(windowLen/10)]
-        csi = csiMatrix.T
+            del degList[:(windowLen/5)]
+        csi = csi_matrix.T
         removedcsi = np.matrix(self.__csi_remove_multipath(csi))  #remove multipath
         # smoothed_csi = np.matrix(self.__smooth_csi(self.__csi_extend_57(removedcsi)))
         deg = [self.__csi_find_aoa(csi)]
@@ -253,7 +271,8 @@ class Intel_IWL5300_API():
     @staticmethod
     def __csi_remove_multipath(csi):
         cir = ifft(csi)
-        n=15
+        # print np.abs(cir)
+        n=5
         # numZeros1 = np.zeros([3, n-1], dtype='complex64')
         # numZeros2 = np.zeros([3, (30-n)], dtype='complex64')
         # removedCSI = fft(np.hstack([numZeros1, cir[:, (n-1):n], numZeros2]))

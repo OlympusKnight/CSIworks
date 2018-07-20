@@ -49,6 +49,8 @@ class WiFi_MUSIC_API():
                     csi_matrix[:, subcarriers_idx] = csi_value[subcarriers_idx][0]  #only one transmitter
                 # csi = np.matrix(self.__csi_extend_57(csi_matrix))
                 csi = np.matrix(csi_matrix)
+                # plt.plot(np.angle(csi).T)
+                # plt.show()
                 removedcsi = np.matrix(self.__csi_remove_multipath(csi))  #remove multipath
                 deg = [self.__csi_find_aoa(removedcsi)]
                 degList.append(deg)
@@ -116,7 +118,7 @@ class WiFi_MUSIC_API():
         MUSIC_S = csi * csi.H
         value, vector = np.linalg.eigh(MUSIC_S)
         # noiseVectorIdx = [i for i in range(0, len(value)) if value[i] < np.max(value) * 1e-4]
-        noiseVectorIdx = [0, 1]
+        noiseVectorIdx = [0]
         En = np.matrix(vector[:, noiseVectorIdx])
         degrees = np.arange(-90, 91, 1)  # the resolution of degree
         tmp = np.matrix([0, 1, 2]).T
@@ -131,7 +133,7 @@ class WiFi_MUSIC_API():
         cir = ifft(csi)
         # plt.plot(abs(cir.T))
         # plt.show()
-        n=3
+        n=1
         numZeros = np.zeros([3, (30-n)], dtype='complex64')
         removedCSI = fft(np.hstack([cir[:, 0:n], numZeros]))
         # plt.plot(abs(np.hstack([cir[:, 0:n], numZeros]).T))
