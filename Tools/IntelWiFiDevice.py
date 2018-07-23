@@ -69,8 +69,8 @@ class Intel_IWL5300_API():
         app = QtWidgets.QApplication([])
 
         mainWindow = QtWidgets.QMainWindow()
-        mainWindow.resize(800, 300)
-        mainWindow.setWindowTitle('Spectrum')
+        mainWindow.resize(800, 600)
+        mainWindow.setWindowTitle('Real-Time packet flow')
 
         centralWidget = QtWidgets.QWidget()
         mainWindow.setCentralWidget(centralWidget)
@@ -78,10 +78,18 @@ class Intel_IWL5300_API():
         lay = QtWidgets.QVBoxLayout()
         centralWidget.setLayout(lay)
 
-        specWid = pg.PlotWidget(name='spectrum')
-        specItem = specWid.getPlotItem()
+        specWid1 = pg.PlotWidget(title='phase diff')
+        specItem1 = specWid1.getPlotItem()
 
-        lay.addWidget(specWid)
+        specWid2 = pg.PlotWidget(title='rssi')
+        # specWid2 = pg.PlotWidget(name='spectrum')
+        specItem2 = specWid2.getPlotItem()
+
+        lay.addWidget(specWid1)
+        lay.addWidget(specWid2)
+
+        specWid1.setYRange(-4, 4)
+        specWid2.setYRange(0, 50)
 
         mainWindow.show()
         while True:
@@ -97,6 +105,12 @@ class Intel_IWL5300_API():
             triangle = [1, 3, 6]
             count = 0
 
+            phasediff21 = []
+            phasediff32 = []
+            phasediff31 = []
+            rssi_alist = []
+            rssi_blist = []
+            rssi_clist = []
             degList1 = []
             degList2 = [[1]]
             X_plot = np.arange(-90, 91, 1)[:, np.newaxis]
@@ -106,8 +120,6 @@ class Intel_IWL5300_API():
             print 'Connected from :', addr
 
             while True:
-                # field_len = int(tClient.recv(bufferSize).encode('hex'), 16)
-                # print count
                 try:
                     tClient.settimeout(15)
                     size = struct.unpack('>H', tClient.recv(2))[0]
@@ -136,6 +148,9 @@ class Intel_IWL5300_API():
 
                     ret = self.__unpack_symbol(bytes)
                     csi = ret['csi']
+                    # rssi_a = ret['rssi_a']
+                    # rssi_b = ret['rssi_b']
+                    # rssi_c = ret['rssi_c']
                     perm = ret['perm']
                     nrx = ret['Nrx']
                     ntx = ret['Ntx']
@@ -145,10 +160,6 @@ class Intel_IWL5300_API():
                                 broken_perm = 1
                                 print("WARN ONCE: Found CSI with NRX=", nrx, " and invalid perm=", perm)
                         else:
-                            # csiMatrix = np.matrix(np.zeros((nrx, 30 * ntx), dtype='complex64'))
-                            # csi = np.matrix(csi).reshape(3, 30)
-                            # for n in range(nrx):
-                            #     csiMatrix[perm[n] - 1, :] = csi[n, :]
                             colByTransmitter = lambda t, csi: [tuple(csi[0:t])] + colByTransmitter(t, csi[t:]) if len(
                                 csi) != 0 else []
                             csi = colByTransmitter(ntx, csi)
@@ -168,8 +179,6 @@ class Intel_IWL5300_API():
                             for n in range(nrx):
                                 csiMatrix[:, perm[n] - 1] = csi[n]
 
-                            csi_matrix = np.matrix(csiMatrix)
-                            self.csi_facto_aoa(csi_matrix, degList1, self._windowLen)
 
                             """this is the plot of ifft of csi to get the cir of a packet"""
                             # cir = ifft(csi_matrix.T, 128)
@@ -179,19 +188,42 @@ class Intel_IWL5300_API():
                             # if not mainWindow.isActiveWindow():
                             #     break
                             """this is the plot of raw csi phase"""
-                            # specItem.plot(np.angle(csiMatrix[:, 0]))
-                            # specItem.plot(np.angle(csiMatrix[:, 1]))
-                            # specItem.clearPlots()
+                            # specItem2.clearPlots()
+                            # specItem2.plot(np.unwrap(np.angle(csiMatrix[:, 0])), pen=(255, 0, 0))
+                            # specItem2.plot(np.unwrap(np.angle(csiMatrix[:, 1])), pen=(0, 255, 0))
+                            # specItem2.plot(np.unwrap(np.angle(csiMatrix[:, 2])), pen=(0, 0, 255))
                             # app.processEvents()
                             # if not mainWindow.isActiveWindow():
                             #     break
-                            """this is the plot of kde of the aoa of the past 100 packet"""
-                            k = kde.KernelDensity(kernel='gaussian', bandwidth=2).fit(degList1)
-                            log_dens = k.score_samples(X_plot)
-                            specItem.plot(X_plot[:, 0], np.exp(log_dens), clear=True)
+                            """this is the plot of raw csi phase difference"""
+                            self.__csi_phase_diff(csiMatrix, phasediff21, phasediff32, phasediff31)
+                            specItem1.clearPlots()
+                            specItem1.plot(phasediff21, pen=(255, 0, 0))
+                            specItem1.plot(phasediff32, pen=(0, 255, 0))
+                            # specItem1.plot(list(map(lambda x: x[0]-x[1], zip(phasediff31, phasediff21))), pen=(0, 0, 255))
+                            specItem1.plot(phasediff31, pen=(0, 0, 255))
+                            # app.processEvents()
+                            # if not mainWindow.isActiveWindow():
+                            #     break
+
+                            """this is the plot of rssi"""
+                            self.__get_rssi(csiMatrix, rssi_alist, rssi_blist, rssi_clist)
+                            specItem2.clearPlots()
+                            specItem2.plot(rssi_alist, pen=(255, 0, 0))
+                            specItem2.plot(rssi_blist, pen=(0, 255, 0))
+                            # specItem1.plot(list(map(lambda x: x[0]-x[1], zip(phasediff31, phasediff21))), pen=(0, 0, 255))
+                            specItem2.plot(rssi_clist, pen=(0, 0, 255))
+
+                            # csi_matrix = np.matrix(csiMatrix)
+                            # self.csi_facto_aoa(csi_matrix, degList1, self._windowLen)
+                            # """this is the plot of kde of the aoa of the past 100 packet"""
+                            # k = kde.KernelDensity(kernel='gaussian', bandwidth=1).fit(degList1)
+                            # log_dens = k.score_samples(X_plot)
+                            # specItem2.plot(X_plot[:, 0], np.exp(log_dens), clear=True)
                             app.processEvents()
                             if not mainWindow.isActiveWindow():
                                 break
+
                             """foreground dtw print"""
                             # if len(degList1) == self._windowLen:
                             #     dtw = fastDTW(degList1, degList2)
@@ -242,6 +274,34 @@ class Intel_IWL5300_API():
         for i in range(15, 30):
             smoothed_csi[i, :] = np.concatenate((e_csi[1, (i - 15):(i + 28)], e_csi[2, (i - 15):(i + 28)]), axis=0)
         return smoothed_csi
+
+    def __get_rssi(self, csiMatrix, rssi_alist, rssi_blist, rssi_clist):
+        if len(rssi_alist) == self._windowLen:
+            rssi_alist.pop(0)
+            rssi_blist.pop(0)
+            rssi_clist.pop(0)
+        rssi_alist.append(self.to_db(np.abs(csiMatrix[0, 0])))
+        rssi_blist.append(self.to_db(np.abs(csiMatrix[0, 1])))
+        rssi_clist.append(self.to_db(np.abs(csiMatrix[0, 2])))
+
+    def __csi_phase_diff(self, csiMatrix, phasediff21, phasediff32, phasediff31):
+        if len(phasediff21) == self._windowLen:
+            phasediff21.pop(0)
+            phasediff32.pop(0)
+            phasediff31.pop(0)
+        phasediff21.append(self.__unwrap(np.angle(csiMatrix[0, 1]) - np.angle(csiMatrix[0, 0])))
+        phasediff32.append(self.__unwrap(np.angle(csiMatrix[0, 2]) - np.angle(csiMatrix[0, 1])))
+        phasediff31.append(self.__unwrap(np.angle(csiMatrix[0, 2]) - np.angle(csiMatrix[0, 0])))
+        # print np.angle(csiMatrix[0, 1]) - np.angle(csiMatrix[0, 0])
+        # print self.__unwrap(np.angle(csiMatrix[0, 1]) - np.angle(csiMatrix[0, 0]))
+
+    @staticmethod
+    def __unwrap(phase):
+        if phase > pi:
+            phase -= 2*pi
+        elif phase < -pi:
+            phase += 2*pi
+        return phase
 
     def csi_facto_aoa(self, csi_matrix, degList, windowLen):
         if len(degList) == windowLen:
